@@ -1,56 +1,22 @@
-const http = require('http');
+const cluster = require('cluster');
+const totalCPUs = require('os').cpus().length;
 
-const cache = require('./cache');
-const router = require('./router');
-const { create: createProxy } = require('./proxy');
-const { SERVER_ID } = require('./utils');
+const app = require('./app');
 
-const port = 5050;
+if (cluster.isMaster) {
+    console.log(`Number of CPUs is ${totalCPUs}`);
+    console.log(`Master ${process.pid} is running`);
 
-const proxyLegacy = createProxy({});
-const proxyNewRoute = createProxy({}, {
-    request: (proxyReq, req, res, options) => {
-        console.log('options:', options.params);
-        proxyReq.setHeader('Authorization', `Bearer ${options.params.token}`)
+    for (let i = 0; i < totalCPUs; i++) {
+        cluster.fork();
     }
-});
 
-const authenticate = (req, res) => {
-    console.log('Req:Headers', req.headers);
-    return Promise.resolve('token123');
+    cluster.on('exit', (worker, code, signal) => {
+        console.log(`worker ${worker.process.pid} died`);
+        console.log("Let's fork another worker!");
+        cluster.fork();
+    });
+
+} else {
+    app.start();
 }
-
-const server = http.createServer(function(req, res) {
-    if (router.handle(req, res)) {
-        return;
-    }
-
-    return cache.get(req.url)
-        .then(value => {
-            if (!value) {
-                proxyLegacy.proxyServer.web(req, res, { target: 'http://127.0.0.1:9000' });
-                return;
-            }
-
-            authenticate(req, res)
-                .then(token => {
-                    if (!token) {
-                        return;
-                    }
-
-                    proxyNewRoute.proxyServer.web(
-                        req, 
-                        res, 
-                        { target: 'http://127.0.0.1:9001', params: { token }});
-                });
-
-        }).catch(err => {
-            console.error(err);
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Erro ao processar a requisição: ' + err);
-        });
-});
- 
-cache.init();
-console.log(`Iniciando proxy (${SERVER_ID}) na porta ${port}.`);
-server.listen(5050);
