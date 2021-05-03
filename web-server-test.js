@@ -7,6 +7,6 @@ console.log(`Iniciando servidor na porta ${port}`);
 http.createServer(function (req, res) {
     console.log(`Nova requisição: ${req.url} - ${req.headers['x-serverid']}`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.write(JSON.stringify({timeInMilis: new Date().getTime()}));
+    res.write(JSON.stringify({timeInMilis: new Date().getFullYear()}));
     res.end();
 }).listen(port);
